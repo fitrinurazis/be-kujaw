@@ -44,7 +44,7 @@ module.exports = (sequelize, DataTypes) => {
     });
     Customer.belongsTo(models.User, {
       foreignKey: "sales_id",
-      as: "sales",
+      as: "user",
     });
     Customer.belongsTo(models.Progdis, {
       foreignKey: "progdi_id",

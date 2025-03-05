@@ -24,8 +24,13 @@ module.exports = {
           model: "Products",
           key: "id",
         },
-        allowNull: false,
+        allowNull: true, // Change to true
       },
+      itemName: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
+
       quantity: {
         type: Sequelize.INTEGER,
         allowNull: false,
@@ -37,6 +42,11 @@ module.exports = {
       totalPrice: {
         type: Sequelize.DECIMAL(10, 2),
         allowNull: false,
+      },
+      status: {
+        type: Sequelize.ENUM("menunggu", "diproses", "selesai"),
+        allowNull: false,
+        defaultValue: "menunggu",
       },
       createdAt: {
         allowNull: false,

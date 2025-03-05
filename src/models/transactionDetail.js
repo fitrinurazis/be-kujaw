@@ -8,7 +8,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     productId: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
+    },
+    itemName: {
+      type: DataTypes.STRING,
+      allowNull: true,
     },
     quantity: {
       type: DataTypes.INTEGER,
@@ -22,8 +26,12 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
     },
+    status: {
+      type: DataTypes.ENUM("menunggu", "diproses", "selesai"),
+      allowNull: false,
+      defaultValue: "menunggu",
+    },
   });
-
   TransactionDetail.associate = function (models) {
     TransactionDetail.belongsTo(models.Transaction, {
       foreignKey: "transactionId",

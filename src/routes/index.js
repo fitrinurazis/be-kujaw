@@ -10,6 +10,9 @@ const reportRoutes = require("./reportRoutes");
 const userRoutes = require("./userRoutes");
 const dashboardRoutes = require("./dashboardRoutes");
 
+const fs = require("fs");
+const path = require("path");
+
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -22,4 +25,5 @@ router.use("/customers", customerRoutes);
 router.use("/reports", reportRoutes);
 router.use("/users", userRoutes);
 router.use("/dashboard", dashboardRoutes);
+
 module.exports = router;

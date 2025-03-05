@@ -12,11 +12,11 @@ router.get("/:id", auth, (req, res) => {
   customerController.getCustomerById(req, res);
 });
 
-router.post("/", auth, (req, res) => {
+router.post("/", auth, adminOnly, (req, res) => {
   customerController.createCustomer(req, res);
 });
 
-router.put("/:id", auth, (req, res) => {
+router.put("/:id", auth, adminOnly, (req, res) => {
   customerController.updateCustomer(req, res);
 });
 

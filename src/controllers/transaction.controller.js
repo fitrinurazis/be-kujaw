@@ -6,24 +6,18 @@ const {
   User,
 } = require("../models");
 const { transactionSchema } = require("../validations/transaction.validation");
-const ReportGenerator = require("../utils/reportGenerator");
 const { sequelize } = require("../models");
+const {
+  incomeTransactionSchema,
+  expenseTransactionSchema,
+} = require("../validations/transaction.validation");
 
-const createTransaction = async (req, res) => {
+const createIncomeTransaction = async (req, res) => {
   try {
-    const validatedData = await transactionSchema.validate(req.body);
-
-    // Get the authenticated user
-    const currentUser = req.user;
-
-    // Determine the userId to use
-    const transactionUserId =
-      currentUser.role === "admin"
-        ? validatedData.userId // Admin can set any userId
-        : currentUser.id; // Non-admin must use their own id
+    const validatedData = await incomeTransactionSchema.validate(req.body);
 
     const result = await sequelize.transaction(async (t) => {
-      // Fetch all products first to get their prices
+      // Fetch products for price calculation
       const productIds = validatedData.details.map(
         (detail) => detail.productId
       );
@@ -32,60 +26,94 @@ const createTransaction = async (req, res) => {
         transaction: t,
       });
 
-      // Add this check
-      if (products.length !== productIds.length) {
-        throw new Error("One or more products not found");
-      }
-
-      // Create details array with prices from products
+      // Calculate details with prices
       const detailsWithPrices = validatedData.details.map((detail) => {
         const product = products.find((p) => p.id === detail.productId);
-        if (!product || !product.price) {
-          throw new Error(`Invalid price for product ${detail.productId}`);
-        }
         return {
           ...detail,
           pricePerUnit: product.price,
+          totalPrice: detail.quantity * product.price,
         };
       });
 
-      // Calculate total amount using product prices
+      // Calculate total amount
       const totalAmount = detailsWithPrices.reduce(
-        (sum, item) => sum + item.quantity * item.pricePerUnit,
+        (sum, item) => sum + parseFloat(item.totalPrice),
         0
       );
-      // Create main transaction
+
+      // Create main transaction with userId from the request body
       const transaction = await Transaction.create(
         {
+          userId: validatedData.userId, // This ensures userId is selectable from front-end
           customerId: validatedData.customerId,
-          userId: transactionUserId, // Use the determined userId
           description: validatedData.description,
-          type: validatedData.type,
+          totalAmount,
           transactionDate: new Date(),
           proofImage: req.file?.filename,
-          totalAmount,
+          type: "pemasukan",
         },
         { transaction: t }
       );
-      // Create details with product prices
+
+      // Create transaction details
       const details = await TransactionDetail.bulkCreate(
         detailsWithPrices.map((detail) => ({
           transactionId: transaction.id,
           productId: detail.productId,
           quantity: detail.quantity,
           pricePerUnit: detail.pricePerUnit,
-          totalPrice: detail.quantity * detail.pricePerUnit,
+          totalPrice: detail.totalPrice,
+          status: detail.status || "menunggu", // Added status with default value similar to updateIncomeTransaction
         })),
         { transaction: t }
       );
 
       return { transaction, details };
     });
-    // Generate report after transaction is created
-    const report = new ReportGenerator();
-    const reportData = await report.generateTransactionReport(
-      result.transaction.id
-    );
+
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+const createExpenseTransaction = async (req, res) => {
+  try {
+    const validatedData = await expenseTransactionSchema.validate(req.body);
+
+    const result = await sequelize.transaction(async (t) => {
+      const transaction = await Transaction.create(
+        {
+          userId: validatedData.userId,
+          customerId: null,
+          description: validatedData.description,
+          totalAmount: validatedData.amount,
+          transactionDate: new Date(),
+          proofImage: req.file?.filename,
+          type: "pengeluaran",
+        },
+        { transaction: t }
+      );
+
+      // Create expense details
+      if (validatedData.details && validatedData.details.length > 0) {
+        const details = await TransactionDetail.bulkCreate(
+          validatedData.details.map((detail) => ({
+            transactionId: transaction.id,
+            itemName: detail.itemName, // Since expense doesn't relate to products
+            quantity: detail.quantity,
+            pricePerUnit: detail.pricePerUnit,
+            totalPrice: detail.totalPrice,
+            itemName: detail.itemName, // Add this field to track expense items
+          })),
+          { transaction: t }
+        );
+        return { transaction, details };
+      }
+
+      return { transaction };
+    });
+
     res.status(201).json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -111,7 +139,6 @@ const getTransactions = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
 const getTransactionById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -130,7 +157,7 @@ const getTransactionById = async (req, res) => {
     });
 
     if (!transaction) {
-      return res.status(404).json({ error: "Transaction not found" });
+      return res.status(404).json({ error: "Tidak ada transaksi" });
     }
 
     res.json(transaction);
@@ -148,7 +175,7 @@ const updateTransaction = async (req, res) => {
       // Get existing transaction
       const transaction = await Transaction.findByPk(id, { transaction: t });
       if (!transaction) {
-        throw new Error("Transaction not found");
+        throw new Error("Tidak ada transaksi");
       }
 
       // Fetch products for price validation
@@ -161,7 +188,7 @@ const updateTransaction = async (req, res) => {
       });
 
       if (products.length !== productIds.length) {
-        throw new Error("One or more products not found");
+        throw new Error("Satu atau lebih produk tidak ditemukan");
       }
 
       // Prepare details with prices
@@ -228,7 +255,7 @@ const deleteTransaction = async (req, res) => {
       // Find transaction
       const transaction = await Transaction.findByPk(id, { transaction: t });
       if (!transaction) {
-        throw new Error("Transaction not found");
+        throw new Error("Tidak ada transaksi");
       }
 
       // Delete related details first
@@ -241,16 +268,206 @@ const deleteTransaction = async (req, res) => {
       await transaction.destroy({ transaction: t });
     });
 
-    res.json({ message: "Transaction deleted successfully" });
+    res.json({ message: "Transaksi berhasil dihapus" });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+const updateIncomeTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const validatedData = await incomeTransactionSchema.validate(req.body);
+
+    const result = await sequelize.transaction(async (t) => {
+      const transaction = await Transaction.findByPk(id, { transaction: t });
+      if (!transaction) {
+        throw new Error("Tidak ada transaksi");
+      }
+
+      const productIds = validatedData.details.map(
+        (detail) => detail.productId
+      );
+      const products = await Product.findAll({
+        where: { id: productIds },
+        transaction: t,
+      });
+
+      const detailsWithPrices = validatedData.details.map((detail) => {
+        const product = products.find((p) => p.id === detail.productId);
+        return {
+          ...detail,
+          pricePerUnit: product.price,
+          totalPrice: detail.quantity * product.price,
+        };
+      });
+
+      const totalAmount = detailsWithPrices.reduce(
+        (sum, item) => sum + parseFloat(item.totalPrice),
+        0
+      );
+
+      await transaction.update(
+        {
+          customerId: validatedData.customerId,
+          userId: validatedData.userId,
+          description: validatedData.description,
+          totalAmount,
+          proofImage: req.file?.filename || transaction.proofImage,
+        },
+        { transaction: t }
+      );
+
+      await TransactionDetail.destroy({
+        where: { transactionId: id },
+        transaction: t,
+      });
+
+      const details = await TransactionDetail.bulkCreate(
+        detailsWithPrices.map((detail) => ({
+          transactionId: id,
+          productId: detail.productId,
+          quantity: detail.quantity,
+          pricePerUnit: detail.pricePerUnit,
+          totalPrice: detail.totalPrice,
+          status: detail.status || "menunggu",
+        })),
+        { transaction: t }
+      );
+
+      return { transaction, details };
+    });
+
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+const updateExpenseTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const validatedData = await expenseTransactionSchema.validate(req.body);
+
+    const result = await sequelize.transaction(async (t) => {
+      const transaction = await Transaction.findByPk(id, { transaction: t });
+      if (!transaction) {
+        throw new Error("Tidak ada transaksi");
+      }
+
+      await transaction.update(
+        {
+          userId: validatedData.userId,
+          description: validatedData.description,
+          totalAmount: validatedData.amount,
+          proofImage: req.file?.filename || transaction.proofImage,
+        },
+        { transaction: t }
+      );
+
+      if (validatedData.details) {
+        await TransactionDetail.destroy({
+          where: { transactionId: id },
+          transaction: t,
+        });
+
+        const details = await TransactionDetail.bulkCreate(
+          validatedData.details.map((detail) => ({
+            transactionId: id,
+            itemName: detail.itemName,
+            quantity: detail.quantity,
+            pricePerUnit: detail.pricePerUnit,
+            totalPrice: detail.totalPrice,
+            status: detail.status || "menunggu",
+          })),
+          { transaction: t }
+        );
+
+        return { transaction, details };
+      }
+
+      return { transaction };
+    });
+
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+const updateTransactionDetailStatus = async (req, res) => {
+  try {
+    const { detailId } = req.params;
+    const { status } = req.body;
+
+    const result = await sequelize.transaction(async (t) => {
+      const detail = await TransactionDetail.findByPk(detailId, {
+        transaction: t,
+      });
+      if (!detail) {
+        throw new Error("Detail transaksi tidak ditemukan");
+      }
+
+      await detail.update({ status }, { transaction: t });
+
+      // Get all details for this transaction
+      const allDetails = await TransactionDetail.findAll({
+        where: { transactionId: detail.transactionId },
+        transaction: t,
+      });
+
+      // Check if all details are completed
+      const allCompleted = allDetails.every((d) => d.status === "selesai");
+
+      // Update transaction status if all details are completed
+      if (allCompleted) {
+        await Transaction.update(
+          { status: "selesai" },
+          {
+            where: { id: detail.transactionId },
+            transaction: t,
+          }
+        );
+      }
+
+      return {
+        detail,
+        transactionStatus: allCompleted ? "selesai" : "menunggu",
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+const deleteIncomeTransaction = async (req, res) => {
+  try {
+    // Add your income transaction delete logic here
+    await deleteTransaction(req, res); // You can reuse the existing deleteTransaction function
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+const deleteExpenseTransaction = async (req, res) => {
+  try {
+    // Add your expense transaction delete logic here
+    await deleteTransaction(req, res); // You can reuse the existing deleteTransaction function
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 };
 
 module.exports = {
-  createTransaction,
+  createIncomeTransaction,
+  createExpenseTransaction,
   getTransactions,
   getTransactionById,
   updateTransaction,
   deleteTransaction,
+  updateIncomeTransaction,
+  updateExpenseTransaction,
+  updateTransactionDetailStatus,
+  deleteIncomeTransaction,
+  deleteExpenseTransaction,
 };

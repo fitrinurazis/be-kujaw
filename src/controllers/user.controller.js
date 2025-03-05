@@ -1,7 +1,8 @@
 const { User } = require("../models");
 
 const getProfile = async (req, res) => {
-  res.json(req.user);
+  const freshUserData = await User.findByPk(req.user.id);
+  res.json(freshUserData);
 };
 
 const updateProfile = async (req, res) => {
@@ -12,7 +13,13 @@ const updateProfile = async (req, res) => {
     }
 
     await req.user.update(updates);
-    res.json({ message: "Profile updated successfully", data: req.user });
+    // Fetch fresh user data after update
+    const updatedUser = await User.findByPk(req.user.id);
+
+    res.json({
+      message: "Profile updated successfully",
+      data: updatedUser,
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

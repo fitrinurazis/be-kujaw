@@ -31,11 +31,11 @@ const auth = async (req, res, next) => {
   }
 };
 
-const adminOnly = async (req, res, next) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Access denied" });
+const adminOnly = (req, res, next) => {
+  if (req.user && req.user.role === "admin") {
+    next();
+  } else {
+    res.status(403).json({ error: "Admin access required" });
   }
-  next();
 };
-
 module.exports = { auth, adminOnly };

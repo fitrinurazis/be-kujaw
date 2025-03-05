@@ -12,7 +12,7 @@ const {
 } = require("../models");
 
 class ReportGenerator {
-  async generateTransactionReport(transactionId) {
+  static async generateTransactionReport(transactionId) {
     const transaction = await Transaction.findOne({
       where: { id: transactionId },
       include: [
@@ -38,12 +38,17 @@ class ReportGenerator {
       ],
     });
 
-    // You can format the data as needed
+    if (!transaction) {
+      throw new Error(`Transaction with ID ${transactionId} not found`);
+    }
+
+    // Format the data
     const reportData = {
       transactionId: transaction.id,
       date: transaction.transactionDate,
-      customer: transaction.customer.name,
-      salesperson: transaction.user.name,
+
+      customer: transaction.customer?.name || "Unknown Customer",
+      salesperson: transaction.user?.name || "Unknown User",
       type: transaction.type,
       totalAmount: transaction.totalAmount,
       items: transaction.details.map((detail) => ({
@@ -58,29 +63,67 @@ class ReportGenerator {
   }
 
   static async toExcel(data, options) {
+    // Ensure temp directory exists
+    const tempDir = path.join(__dirname, "..", "temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(options.sheetName);
+    const worksheet = workbook.addWorksheet(options.sheetName || "Report");
 
     worksheet.columns = options.columns;
     data.forEach((row) => worksheet.addRow(row));
 
-    const filePath = path.join(__dirname, "..", "temp", options.fileName);
+    // Add some styling
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).alignment = {
+      vertical: "middle",
+      horizontal: "center",
+    };
+
+    const filePath = path.join(tempDir, options.fileName);
     await workbook.xlsx.writeFile(filePath);
     return filePath;
   }
 
   static async toPDF(data, options) {
+    // Ensure temp directory exists
+    const tempDir = path.join(__dirname, "..", "temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
     const doc = new PDFDocument();
-    const filePath = path.join(__dirname, "..", "temp", options.fileName);
+    const filePath = path.join(tempDir, options.fileName);
     const writeStream = fs.createWriteStream(filePath);
 
     doc.pipe(writeStream);
+
+    // Add header/title
     doc.fontSize(16).text(options.title, { align: "center" });
     doc.moveDown();
 
-    data.forEach((row) => {
-      doc.fontSize(10).text(options.formatRow(row));
+    // Add date range if provided
+    if (options.dateRange) {
+      doc.fontSize(12).text(options.dateRange, { align: "center" });
       doc.moveDown();
+    }
+    // Add data rows
+    data.forEach((row, index) => {
+      // Add spacing between items
+      if (index > 0) doc.moveDown(0.5);
+
+      doc.fontSize(10).text(options.formatRow(row));
+
+      // Add a separator line except for the last item
+      if (index < data.length - 1) {
+        doc.moveDown(0.5);
+        doc
+          .moveTo(50, doc.y)
+          .lineTo(doc.page.width - 50, doc.y)
+          .stroke();
+      }
     });
 
     doc.end();
@@ -91,5 +134,4 @@ class ReportGenerator {
     });
   }
 }
-
 module.exports = ReportGenerator;

@@ -28,6 +28,14 @@ docs(app);
 // Routes
 app.use("/api", routes);
 
+// Catch-all route handler for undefined routes
+app.use("*", (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found. Please check your URL and try again.",
+  });
+});
+
 // Error Handler
 app.use(errorHandler);
 

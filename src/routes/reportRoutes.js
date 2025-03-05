@@ -38,4 +38,9 @@ router.get("/export/pdf", auth, adminOnly, (req, res) => {
   reportController.exportToPDF(req, res);
 });
 
+// Tambahkan route ini
+router.get("/data", auth, adminOnly, (req, res) => {
+  reportController.getReportData(req, res);
+});
+
 module.exports = router;

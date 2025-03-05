@@ -23,7 +23,7 @@ module.exports = {
           model: "Customers",
           key: "id",
         },
-        allowNull: false,
+        allowNull: true,
       },
       description: {
         type: Sequelize.TEXT,
@@ -40,8 +40,13 @@ module.exports = {
         type: Sequelize.STRING,
       },
       type: {
-        type: Sequelize.ENUM("income", "expense"),
+        type: Sequelize.ENUM("pemasukan", "pengeluaran"),
         allowNull: false,
+      },
+      status: {
+        type: Sequelize.ENUM("menunggu", "diproses", "selesai"),
+        allowNull: false,
+        defaultValue: "menunggu",
       },
       createdAt: {
         allowNull: false,

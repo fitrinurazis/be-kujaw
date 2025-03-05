@@ -18,28 +18,31 @@ const getSummary = async (req, res) => {
       totalExpense,
       totalProducts,
       totalCustomers,
+      totalTransactions,
       monthlySales,
     ] = await Promise.all([
       // Total Income
       Transaction.sum("totalAmount", {
         where: {
-          type: "income",
+          type: "pemasukan",
         },
       }),
       // Total Expense
       Transaction.sum("totalAmount", {
         where: {
-          type: "expense",
+          type: "pengeluaran",
         },
       }),
       // Total Products
       Product.count(),
       // Total Customers
       Customer.count(),
+      // Total Transactions
+      Transaction.count(),
       // Monthly Sales
       Transaction.sum("totalAmount", {
         where: {
-          type: "income",
+          type: "pemasukan",
           transactionDate: {
             [Op.gte]: startOfMonth,
           },
@@ -52,6 +55,7 @@ const getSummary = async (req, res) => {
       totalExpense: totalExpense || 0,
       totalProducts,
       totalCustomers,
+      totalTransactions,
       monthlySales: monthlySales || 0,
       netIncome: (totalIncome || 0) - (totalExpense || 0),
     });
@@ -113,7 +117,7 @@ const getTopCustomers = async (req, res) => {
       include: [
         { model: Customer, as: "customer", attributes: ["name", "email"] },
       ],
-      where: { type: "income" },
+      where: { type: "pemasukan" },
       group: ["customerId", "customer.id"],
       order: [[sequelize.fn("SUM", sequelize.col("totalAmount")), "DESC"]],
       limit: 5,
@@ -137,7 +141,7 @@ const getSalesChart = async (req, res) => {
         [sequelize.fn("SUM", sequelize.col("totalAmount")), "total"],
       ],
       where: {
-        type: "income",
+        type: "pemasukan",
         transactionDate: {
           [Op.gte]: startDate,
         },

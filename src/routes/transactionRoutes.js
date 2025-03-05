@@ -1,43 +1,68 @@
 const express = require("express");
 const { auth, adminOnly } = require("../middlewares/auth");
 const { upload, cleanupFiles } = require("../middlewares/fileHandler");
-const transactionController = require("../controllers/transaction.controller");
+const {
+  createIncomeTransaction,
+  createExpenseTransaction,
+  updateIncomeTransaction,
+  updateExpenseTransaction,
+  updateTransactionDetailStatus,
+  deleteIncomeTransaction,
+  deleteExpenseTransaction,
+  getTransactions,
+  getTransactionById,
+} = require("../controllers/transaction.controller");
 
 const router = express.Router();
 
+// Income routes
 router.post(
-  "/",
+  "/income",
   auth,
+  adminOnly,
   upload.single("proofImage"),
   cleanupFiles,
-  (req, res) => {
-    transactionController.createTransaction(req, res);
-  }
+  createIncomeTransaction
 );
-router.get("/", auth, (req, res) => {
-  transactionController.getTransactions(req, res);
-});
-
-router.get("/:id", auth, (req, res) => {
-  transactionController.getTransactionById(req, res);
-});
-
-router.get("/report", auth, adminOnly, (req, res) => {
-  transactionController.getTransactionReport(req, res);
-});
-
 router.put(
-  "/:id",
+  "/income/:id",
   auth,
+  adminOnly,
   upload.single("proofImage"),
   cleanupFiles,
-  (req, res) => {
-    transactionController.updateTransaction(req, res);
-  }
+  updateIncomeTransaction
+);
+router.delete("/income/:id", auth, deleteIncomeTransaction);
+
+// Expense routes
+router.post(
+  "/expense",
+  auth,
+  adminOnly,
+  upload.single("proofImage"),
+  cleanupFiles,
+  createExpenseTransaction
+);
+router.put(
+  "/expense/:id",
+  auth,
+  adminOnly,
+  upload.single("proofImage"),
+  cleanupFiles,
+  updateExpenseTransaction
 );
 
-router.delete("/:id", auth, (req, res) => {
-  transactionController.deleteTransaction(req, res);
-});
+router.patch(
+  "/detail/:detailId/status",
+  auth,
+  adminOnly,
+  updateTransactionDetailStatus
+);
+
+router.delete("/expense/:id", auth, adminOnly, deleteExpenseTransaction);
+
+// General routes
+router.get("/", auth, getTransactions);
+router.get("/:id", auth, getTransactionById);
 
 module.exports = router;

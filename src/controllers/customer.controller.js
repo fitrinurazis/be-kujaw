@@ -3,6 +3,9 @@ const {
   Transaction,
   TransactionDetail,
   Product,
+  Progdis,
+  Classes,
+  User,
 } = require("../models");
 const { Op } = require("sequelize");
 
@@ -17,8 +20,6 @@ const getAllCustomers = async (req, res) => {
             { email: { [Op.like]: `%${search}%` } },
             { phone: { [Op.like]: `%${search}%` } },
             { nimSiakad: { [Op.like]: `%${search}%` } },
-            { class: { [Op.like]: `%${search}%` } },
-            // Remove progdi direct search since it's a relation
           ],
         }
       : {};
@@ -33,8 +34,18 @@ const getAllCustomers = async (req, res) => {
           attributes: ["id", "totalAmount", "transactionDate", "type"],
         },
         {
-          model: Progdi,
+          model: Progdis,
           as: "progdi",
+          attributes: ["id", "name"],
+        },
+        {
+          model: Classes,
+          as: "class",
+          attributes: ["id", "name"],
+        },
+        {
+          model: User,
+          as: "user",
           attributes: ["id", "name"],
         },
       ],
@@ -45,7 +56,6 @@ const getAllCustomers = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
 const getCustomerById = async (req, res) => {
   try {
     const customer = await Customer.findByPk(req.params.id, {
@@ -56,8 +66,18 @@ const getCustomerById = async (req, res) => {
           attributes: ["id", "totalAmount", "transactionDate", "type"],
         },
         {
-          model: Progdi,
+          model: Progdis,
           as: "progdi",
+          attributes: ["id", "name"],
+        },
+        {
+          model: Classes,
+          as: "class",
+          attributes: ["id", "name"],
+        },
+        {
+          model: User,
+          as: "user",
           attributes: ["id", "name"],
         },
       ],
@@ -81,7 +101,7 @@ const createCustomer = async (req, res) => {
       phone,
       nimSiakad,
       passwordSiakad,
-      class: className,
+      class_id,
       progdi_id,
       sales_id,
     } = req.body;
@@ -92,7 +112,7 @@ const createCustomer = async (req, res) => {
       phone,
       nimSiakad,
       passwordSiakad,
-      class: className,
+      class_id,
       progdi_id,
       sales_id,
     });
@@ -116,7 +136,7 @@ const updateCustomer = async (req, res) => {
       phone,
       nimSiakad,
       passwordSiakad,
-      class: className,
+      class_id,
       progdi_id,
       sales_id,
     } = req.body;
@@ -132,7 +152,7 @@ const updateCustomer = async (req, res) => {
       phone,
       nimSiakad,
       passwordSiakad,
-      class: className,
+      class_id,
       progdi_id,
       sales_id,
     });

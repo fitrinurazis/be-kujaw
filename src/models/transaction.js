@@ -8,7 +8,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     customerId: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true, // Change this to true
     },
     description: DataTypes.TEXT,
     totalAmount: {
@@ -21,8 +21,14 @@ module.exports = (sequelize, DataTypes) => {
     },
     proofImage: DataTypes.STRING,
     type: {
-      type: DataTypes.ENUM("income", "expense"),
+      type: DataTypes.ENUM("pemasukan", "pengeluaran"),
       allowNull: false,
+    },
+
+    status: {
+      type: DataTypes.ENUM("menunggu", "diproses", "selesai"),
+      allowNull: false,
+      defaultValue: "menunggu",
     },
   });
 
