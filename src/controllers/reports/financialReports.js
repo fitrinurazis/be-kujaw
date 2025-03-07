@@ -17,10 +17,20 @@ const getIncomeExpenseReport = async (req, res) => {
         .json({ error: "Start date and end date are required" });
     }
 
+    // Check if the dates provided are valid
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ error: "Invalid date format" });
+    }
+
+    // Make sure end date includes the full day
+    end.setHours(23, 59, 59, 999);
+
     const transactions = await Transaction.findAll({
       where: {
         transactionDate: {
-          [Op.between]: [new Date(startDate), new Date(endDate)],
+          [Op.between]: [start, end],
         },
       },
     });
@@ -33,9 +43,10 @@ const getIncomeExpenseReport = async (req, res) => {
 
     const report = transactions.reduce(
       (acc, transaction) => {
-        if (transaction.type.toUpperCase() === "INCOME") {
+        // Use "pemasukan" and "pengeluaran" instead of "INCOME" and "EXPENSE"
+        if (transaction.type === "pemasukan") {
           acc.totalIncome += parseFloat(transaction.totalAmount || 0);
-        } else if (transaction.type.toUpperCase() === "EXPENSE") {
+        } else if (transaction.type === "pengeluaran") {
           acc.totalExpense += parseFloat(transaction.totalAmount || 0);
         }
         return acc;
@@ -112,7 +123,6 @@ const getIncomeExpenseReport = async (req, res) => {
     });
   }
 };
-
 module.exports = {
   getIncomeExpenseReport,
 };

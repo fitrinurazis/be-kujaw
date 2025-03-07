@@ -120,7 +120,6 @@ const getSalesPerformance = async (req, res) => {
         return res.json(salesData);
     }
   } catch (error) {
-    console.error("Error generating sales performance:", error);
     return res.status(500).json({
       error: "Failed to generate sales performance report",
       details: error.message,

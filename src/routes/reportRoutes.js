@@ -39,7 +39,7 @@ router.get("/export/pdf", auth, adminOnly, (req, res) => {
 });
 
 // Tambahkan route ini
-router.get("/data", auth, adminOnly, (req, res) => {
+router.get("/data", auth, (req, res) => {
   reportController.getReportData(req, res);
 });
 
