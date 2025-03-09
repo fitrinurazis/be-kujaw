@@ -1,4 +1,4 @@
-const { User } = require("../models");
+const { User, Transaction, Customer } = require("../models");
 
 const getProfile = async (req, res) => {
   const freshUserData = await User.findByPk(req.user.id);
@@ -34,6 +34,46 @@ const getAllSales = async (req, res) => {
     res.json({
       message: "Sales users retrieved successfully",
       data: salesUsers,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+const getSalesById = async (req, res) => {
+  try {
+    const salesUser = await User.findByPk(req.params.id, {
+      attributes: { exclude: ["password"] },
+      include: [
+        {
+          model: Transaction,
+          as: "transactions",
+          include: [
+            {
+              model: Customer,
+              as: "customer",
+            },
+          ],
+        },
+        {
+          model: Customer,
+          as: "customers",
+          include: [
+            {
+              model: Transaction,
+              as: "transactions",
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!salesUser) {
+      return res.status(404).json({ error: "Sales user not found" });
+    }
+
+    res.json({
+      message: "Sales user retrieved successfully",
+      data: salesUser,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -84,6 +124,7 @@ module.exports = {
   getProfile,
   updateProfile,
   getAllSales,
+  getSalesById,
   createSalesUser,
   updateSalesUser,
   deleteSalesUser,

@@ -18,8 +18,11 @@ router.put(
   }
 );
 
-router.get("/sales", auth, adminOnly, (req, res) => {
+router.get("/sales", auth, (req, res) => {
   userController.getAllSales(req, res);
+});
+router.get("/sales/:id", auth, (req, res) => {
+  userController.getSalesById(req, res);
 });
 
 router.post("/sales", auth, adminOnly, (req, res) => {
