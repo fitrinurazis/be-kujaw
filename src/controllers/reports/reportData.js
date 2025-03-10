@@ -48,13 +48,11 @@ const getReportData = async (req, res) => {
         data = transactions.map((t) => ({
           id: t.id,
           date: t.transactionDate.toISOString().split("T")[0],
-          // Add null checks with optional chaining and default values
           customer: t.customer?.name || "Unknown Customer",
           salesperson: t.user?.name || "Unknown User",
           type: t.type,
           total: t.totalAmount,
           details: t.details.map((detail) => ({
-            // Make sure to handle null products
             product: detail.product?.name || "Unknown Product",
             quantity: detail.quantity,
             price: detail.pricePerUnit,
@@ -151,9 +149,9 @@ const getReportData = async (req, res) => {
 
         const report = incomeExpenseTransactions.reduce(
           (acc, transaction) => {
-            if (transaction.type === "INCOME") {
+            if (transaction.type === "pemasukan") {
               acc.totalIncome += parseFloat(transaction.totalAmount || 0);
-            } else if (transaction.type === "EXPENSE") {
+            } else if (transaction.type === "pengeluaran") {
               acc.totalExpense += parseFloat(transaction.totalAmount || 0);
             }
             return acc;

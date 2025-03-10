@@ -1,53 +1,29 @@
-const PDFDocument = require("pdfkit");
-const fs = require("fs");
+const { generatePDFReport } = require("../reportGenerator");
 
-const generatePDFReport = async (transactions, year, month) => {
+const generatePDFReport2 = async (transactions, year, month) => {
   try {
-    const tempFilePath = `transactions-${year}-${month}.pdf`;
-    const doc = new PDFDocument();
-    const stream = fs.createWriteStream(tempFilePath);
+    // Konversi transaksi ke format yang diharapkan oleh generator PDF
+    const formattedTransactions = transactions.map((transaction) => ({
+      id: transaction.id,
+      date: transaction.transactionDate.toISOString().split("T")[0],
+      customer: transaction.customer?.name || "Unknown",
+      salesperson: transaction.user?.name || "Unknown User",
+      type: transaction.type || "N/A",
+      total: transaction.totalAmount || 0,
+    }));
 
-    doc.pipe(stream);
+    // Gunakan fungsi generatePDFReport yang sudah diperbaiki
+    const tempFilePath = await generatePDFReport(
+      formattedTransactions,
+      year,
+      month
+    );
 
-    // Add title
-    doc.fontSize(16).text(`Transaction Report - ${month}/${year}`, {
-      align: "center",
-    });
-    doc.moveDown();
-
-    // Add transactions
-    transactions.forEach((transaction) => {
-      doc.fontSize(12).text(`Transaction ID: ${transaction.id}`);
-      doc
-        .fontSize(10)
-        .text(
-          `Date: ${transaction.transactionDate.toISOString().split("T")[0]}`
-        );
-      doc.text(`Customer: ${transaction.customer?.name || "Unknown"}`);
-      // Products
-      doc.text("Products:");
-      transaction.details.forEach((detail) => {
-        doc.text(
-          `  - ${detail.product?.name || "Unknown Product"}: ${
-            detail.quantity
-          } x ${detail.pricePerUnit} = ${detail.totalPrice}`
-        );
-      });
-
-      doc.text(`Total Amount: ${transaction.totalAmount}`);
-      doc.moveDown();
-    });
-
-    doc.end();
-
-    return new Promise((resolve, reject) => {
-      stream.on("finish", () => resolve(tempFilePath));
-      stream.on("error", reject);
-    });
+    return tempFilePath;
   } catch (error) {
     console.error("PDF generation failed:", error);
     throw new Error("PDF generation failed: " + error.message);
   }
 };
 
-module.exports = { generatePDFReport };
+module.exports = { generatePDFReport: generatePDFReport2 };

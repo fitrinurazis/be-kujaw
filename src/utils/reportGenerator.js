@@ -1,137 +1,318 @@
-const ExcelJS = require("exceljs");
-const PDFDocument = require("pdfkit");
 const fs = require("fs");
+const PDFDocument = require("pdfkit");
 const path = require("path");
 
-const {
-  Transaction,
-  TransactionDetail,
-  Product,
-  Customer,
-  User,
-} = require("../models");
+const generatePDFReport = async (
+  transactions,
+  year,
+  month,
+  startDate,
+  endDate
+) => {
+  return new Promise((resolve, reject) => {
+    try {
+      // Buat nama file yang relevan dengan periode
+      const tempFilePath =
+        startDate && endDate
+          ? `transactions-${startDate.replace(/\//g, "-")}-to-${endDate.replace(
+              /\//g,
+              "-"
+            )}.pdf`
+          : `transactions-${year}-${month}.pdf`;
 
-class ReportGenerator {
-  static async generateTransactionReport(transactionId) {
-    const transaction = await Transaction.findOne({
-      where: { id: transactionId },
-      include: [
-        {
-          model: User,
-          as: "user",
-          attributes: ["id", "name"],
-        },
-        {
-          model: Customer,
-          as: "customer",
-        },
-        {
-          model: TransactionDetail,
-          as: "details",
-          include: [
-            {
-              model: Product,
-              as: "product",
-            },
-          ],
-        },
-      ],
-    });
+      // Buat PDF dengan orientasi landscape
+      const doc = new PDFDocument({
+        margin: 50,
+        size: "A4",
+        layout: "landscape",
+        bufferPages: true, // Penting untuk pagination
+      });
 
-    if (!transaction) {
-      throw new Error(`Transaction with ID ${transactionId} not found`);
-    }
+      // Buat write stream
+      const stream = fs.createWriteStream(tempFilePath);
 
-    // Format the data
-    const reportData = {
-      transactionId: transaction.id,
-      date: transaction.transactionDate,
+      // Pipe PDF ke stream
+      doc.pipe(stream);
 
-      customer: transaction.customer?.name || "Unknown Customer",
-      salesperson: transaction.user?.name || "Unknown User",
-      type: transaction.type,
-      totalAmount: transaction.totalAmount,
-      items: transaction.details.map((detail) => ({
-        product: detail.product.name,
-        quantity: detail.quantity,
-        price: detail.pricePerUnit,
-        total: detail.totalPrice,
-      })),
-    };
+      // Definisi struktur tabel
+      const columns = [
+        { header: "Transaction ID", property: "id", width: 100 },
+        { header: "Date", property: "date", width: 100 },
+        { header: "Customer", property: "customer", width: 120 },
+        { header: "Salesperson", property: "salesperson", width: 120 },
+        { header: "Type", property: "type", width: 80 },
+        { header: "Total (Rp)", property: "total", width: 120 },
+      ];
 
-    return reportData;
-  }
+      // Hitung lebar tabel
+      const tableWidth = columns.reduce((sum, col) => sum + col.width, 0);
 
-  static async toExcel(data, options) {
-    // Ensure temp directory exists
-    const tempDir = path.join(__dirname, "..", "temp");
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+      // Konstanta ukuran
+      const ROW_HEIGHT = 20;
+      const HEADER_HEIGHT = 25;
+      const PAGE_MARGIN = 50;
+      const LOGO_HEIGHT = 50;
+      const HEADER_TEXT_HEIGHT = 60;
 
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(options.sheetName || "Report");
+      // Jumlah baris maksimum per halaman
+      const ROWS_PER_PAGE = Math.floor(
+        (doc.page.height -
+          PAGE_MARGIN * 2 -
+          HEADER_HEIGHT -
+          LOGO_HEIGHT -
+          HEADER_TEXT_HEIGHT) /
+          ROW_HEIGHT
+      );
 
-    worksheet.columns = options.columns;
-    data.forEach((row) => worksheet.addRow(row));
+      // Track current page
+      let currentPage = 1;
 
-    // Add some styling
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).alignment = {
-      vertical: "middle",
-      horizontal: "center",
-    };
+      // Untuk menyimpan grand total
+      let grandTotal = 0;
 
-    const filePath = path.join(tempDir, options.fileName);
-    await workbook.xlsx.writeFile(filePath);
-    return filePath;
-  }
+      // Fungsi untuk menambahkan header dan logo di setiap halaman
+      const addPageHeader = () => {
+        // Logo perusahaan (asumsi logo.png ada di folder assets)
+        try {
+          const logoPath = path.join(__dirname, "../assets/logo.png");
+          if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 50, 50, { width: 100 });
+          } else {
+            console.log("Logo file not found:", logoPath);
+            // Placeholder teks jika logo tidak ditemukan
+            doc.font("Helvetica-Bold").fontSize(20).text("KUJAW", 50, 50);
+          }
+        } catch (err) {
+          console.log("Error loading logo:", err.message);
+          doc.font("Helvetica-Bold").fontSize(20).text("KUJAW", 50, 50);
+        }
 
-  static async toPDF(data, options) {
-    // Ensure temp directory exists
-    const tempDir = path.join(__dirname, "..", "temp");
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-
-    const doc = new PDFDocument();
-    const filePath = path.join(tempDir, options.fileName);
-    const writeStream = fs.createWriteStream(filePath);
-
-    doc.pipe(writeStream);
-
-    // Add header/title
-    doc.fontSize(16).text(options.title, { align: "center" });
-    doc.moveDown();
-
-    // Add date range if provided
-    if (options.dateRange) {
-      doc.fontSize(12).text(options.dateRange, { align: "center" });
-      doc.moveDown();
-    }
-    // Add data rows
-    data.forEach((row, index) => {
-      // Add spacing between items
-      if (index > 0) doc.moveDown(0.5);
-
-      doc.fontSize(10).text(options.formatRow(row));
-
-      // Add a separator line except for the last item
-      if (index < data.length - 1) {
-        doc.moveDown(0.5);
+        // Header teks
         doc
-          .moveTo(50, doc.y)
-          .lineTo(doc.page.width - 50, doc.y)
-          .stroke();
+          .font("Helvetica-Bold")
+          .fontSize(16)
+          .text(`SALES Report`, doc.page.width / 2, 50, { align: "center" });
+
+        // Report period
+        if (startDate && endDate) {
+          doc
+            .font("Helvetica")
+            .fontSize(12)
+            .text(
+              `Period: ${startDate} to ${endDate}`,
+              doc.page.width / 2,
+              70,
+              { align: "center" }
+            );
+        } else {
+          doc
+            .font("Helvetica")
+            .fontSize(12)
+            .text(`Period: ${month}/${year}`, doc.page.width / 2, 70, {
+              align: "center",
+            });
+        }
+
+        doc.moveDown(2);
+      };
+
+      // Fungsi untuk menggambar header tabel
+      const drawTableHeader = (y) => {
+        let x = 50;
+
+        // Header background
+        doc.fillColor("#4F81BD").rect(x, y, tableWidth, HEADER_HEIGHT).fill();
+
+        // Header text
+        doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(10);
+
+        for (let i = 0; i < columns.length; i++) {
+          doc.text(columns[i].header, x + 5, y + 7, {
+            width: columns[i].width - 10,
+            align: "center",
+          });
+          x += columns[i].width;
+        }
+
+        return y + HEADER_HEIGHT;
+      };
+
+      // Menambahkan halaman pertama dengan header
+      addPageHeader();
+
+      // Posisi awal tabel setelah header
+      let y = 120; // Setelah header dan logo
+
+      // Buat header tabel pada halaman pertama
+      y = drawTableHeader(y);
+
+      // Proses semua data transaksi dengan pagination
+      for (let i = 0; i < transactions.length; i++) {
+        // Cek apakah perlu halaman baru
+        if (i % ROWS_PER_PAGE === 0 && i > 0) {
+          // Tambahkan borders untuk halaman saat ini
+          addTableBorders(y);
+
+          // Tambah halaman baru
+          doc.addPage();
+          currentPage++;
+
+          // Tambahkan header di halaman baru
+          addPageHeader();
+
+          // Reset posisi y di halaman baru
+          y = 120;
+
+          // Tambahkan header tabel di halaman baru
+          y = drawTableHeader(y);
+        }
+
+        const item = transactions[i];
+
+        // Calculate row position within current page
+        const rowIndexInPage = i % ROWS_PER_PAGE;
+
+        // Zebra striping
+        if (rowIndexInPage % 2 === 0) {
+          doc.fillColor("#E9EFF7").rect(50, y, tableWidth, ROW_HEIGHT).fill();
+        }
+
+        // Reset warna dan posisi untuk teks
+        doc.fillColor("#000000");
+        let x = 50;
+
+        // Isi data per kolom
+        for (let j = 0; j < columns.length; j++) {
+          const column = columns[j];
+          let value = item[column.property] || "";
+
+          // Format mata uang untuk kolom total
+          if (column.property === "total") {
+            if (!isNaN(parseFloat(value))) {
+              grandTotal += parseFloat(value);
+              value = new Intl.NumberFormat("id-ID").format(value);
+            }
+          }
+
+          // Posisi vertical tengah untuk teks
+          const textY = y + ROW_HEIGHT / 2 - 4;
+
+          doc.fontSize(9).text(String(value), x + 5, textY, {
+            width: column.width - 10,
+            align: column.property === "total" ? "right" : "left",
+          });
+
+          x += column.width;
+        }
+
+        y += ROW_HEIGHT;
       }
-    });
 
-    doc.end();
+      // Tambahkan baris grand total
+      addGrandTotalRow(y, grandTotal);
 
-    return new Promise((resolve, reject) => {
-      writeStream.on("finish", () => resolve(filePath));
-      writeStream.on("error", reject);
-    });
-  }
-}
-module.exports = ReportGenerator;
+      // Tambahkan borders untuk tabel
+      addTableBorders(y + 25); // +25 untuk tinggi baris grand total
+
+      // Fungsi untuk menambahkan borders ke tabel
+      function addTableBorders(endY) {
+        const startY = 120; // Posisi awal tabel
+
+        // Garis vertikal
+        let xPos = 50;
+        for (let i = 0; i <= columns.length; i++) {
+          doc
+            .strokeColor("#000000")
+            .lineWidth(0.5)
+            .moveTo(xPos, startY)
+            .lineTo(xPos, endY)
+            .stroke();
+
+          if (i < columns.length) {
+            xPos += columns[i].width;
+          }
+        }
+
+        // Garis horizontal - header
+        doc
+          .strokeColor("#000000")
+          .lineWidth(0.5)
+          .moveTo(50, startY)
+          .lineTo(50 + tableWidth, startY)
+          .stroke();
+
+        // Garis horizontal - setelah header
+        doc
+          .strokeColor("#000000")
+          .lineWidth(0.5)
+          .moveTo(50, startY + HEADER_HEIGHT)
+          .lineTo(50 + tableWidth, startY + HEADER_HEIGHT)
+          .stroke();
+
+        // Garis horizontal untuk setiap baris data
+        let rowY = startY + HEADER_HEIGHT;
+        const rowCount = Math.ceil(
+          (endY - (startY + HEADER_HEIGHT)) / ROW_HEIGHT
+        );
+
+        for (let i = 0; i <= rowCount; i++) {
+          doc
+            .strokeColor("#000000")
+            .lineWidth(0.5)
+            .moveTo(50, rowY)
+            .lineTo(50 + tableWidth, rowY)
+            .stroke();
+
+          rowY += ROW_HEIGHT;
+        }
+      }
+
+      // Fungsi untuk menambahkan baris grand total
+      function addGrandTotalRow(y, total) {
+        // Background footer
+        doc.fillColor("#D3D3D3").rect(50, y, tableWidth, 25).fill();
+
+        // Text "Grand Total"
+        doc
+          .fillColor("#000000")
+          .font("Helvetica-Bold")
+          .fontSize(10)
+          .text("Grand Total:", 50 + tableWidth - 240, y + 7, {
+            width: 120,
+            align: "right",
+          });
+
+        // Nilai total
+        const formattedTotal = new Intl.NumberFormat("id-ID", {
+          style: "currency",
+          currency: "IDR",
+          minimumFractionDigits: 0,
+        }).format(total);
+
+        doc.text(formattedTotal, 50 + tableWidth - 120, y + 7, {
+          width: 110,
+          align: "right",
+        });
+      }
+
+      // Finalisasi PDF
+      doc.end();
+
+      // Event handlers
+      stream.on("finish", () => {
+        console.log(`PDF report created successfully: ${tempFilePath}`);
+        resolve(tempFilePath);
+      });
+
+      stream.on("error", (err) => {
+        console.error("Error writing PDF:", err);
+        reject(err);
+      });
+    } catch (error) {
+      console.error("Error generating PDF report:", error);
+      reject(error);
+    }
+  });
+};
+
+module.exports = { generatePDFReport };

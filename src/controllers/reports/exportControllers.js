@@ -1,5 +1,4 @@
 const ExcelJS = require("exceljs");
-const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const {
   Transaction,
@@ -12,6 +11,7 @@ const { Op } = require("sequelize");
 const {
   handleFileDownload,
 } = require("../../utils/fileHandlers/downloadHandler");
+const { generatePDFReport } = require("../../utils/reportGenerator");
 
 const exportToExcel = async (req, res) => {
   try {
@@ -66,6 +66,7 @@ const exportToExcel = async (req, res) => {
         break;
 
       case "products":
+        // Kode untuk products report (tidak berubah)
         const transactionDetails = await TransactionDetail.findAll({
           include: [
             {
@@ -95,8 +96,8 @@ const exportToExcel = async (req, res) => {
               totalRevenue: 0,
             };
           }
-          acc[productId].totalQuantity += detail.quantity;
-          acc[productId].totalRevenue += parseFloat(detail.totalPrice);
+          acc[productId].totalQuantity += detail.quantity || 0;
+          acc[productId].totalRevenue += parseFloat(detail.totalPrice || 0);
           return acc;
         }, {});
 
@@ -110,6 +111,7 @@ const exportToExcel = async (req, res) => {
         break;
 
       case "customers":
+        // Kode untuk customers report (tidak berubah)
         const customerTransactions = await Transaction.findAll({
           where: {
             transactionDate: {
@@ -135,7 +137,9 @@ const exportToExcel = async (req, res) => {
               transactionCount: 0,
             };
           }
-          acc[customerId].totalSpent += parseFloat(transaction.totalAmount);
+          acc[customerId].totalSpent += parseFloat(
+            transaction.totalAmount || 0
+          );
           acc[customerId].transactionCount += 1;
           return acc;
         }, {});
@@ -177,6 +181,8 @@ const exportToExcel = async (req, res) => {
 const exportToPDF = async (req, res) => {
   try {
     const { reportType, startDate, endDate } = req.query;
+    const year = new Date().getFullYear();
+    const month = new Date().getMonth() + 1;
 
     if (!reportType || !startDate || !endDate) {
       return res
@@ -184,17 +190,11 @@ const exportToPDF = async (req, res) => {
         .json({ error: "Report type, start date and end date are required" });
     }
 
-    let data = [];
-    let options = {
-      title: `${reportType.toUpperCase()} Report`,
-      fileName: `${reportType}-report-${startDate}-to-${endDate}.pdf`,
-    };
-
-    let formatRow;
+    let transactions = [];
 
     switch (reportType.toLowerCase()) {
       case "sales":
-        const transactions = await Transaction.findAll({
+        transactions = await Transaction.findAll({
           where: {
             transactionDate: {
               [Op.between]: [new Date(startDate), new Date(endDate)],
@@ -204,9 +204,11 @@ const exportToPDF = async (req, res) => {
             { model: Customer, as: "customer" },
             { model: User, as: "user" },
           ],
+          order: [["transactionDate", "ASC"]],
         });
 
-        data = transactions.map((t) => ({
+        // Format data untuk PDF generator
+        transactions = transactions.map((t) => ({
           id: t.id,
           date: t.transactionDate.toISOString().split("T")[0],
           customer: t.customer?.name || "Unknown Customer",
@@ -214,12 +216,10 @@ const exportToPDF = async (req, res) => {
           type: t.type,
           total: t.totalAmount,
         }));
-
-        formatRow = (row) =>
-          `Transaction ID: ${row.id}\nDate: ${row.date}\nCustomer: ${row.customer}\nSalesperson: ${row.salesperson}\nType: ${row.type}\nTotal: ${row.total}`;
         break;
 
       case "products":
+        // Mengambil data produk
         const transactionDetails = await TransactionDetail.findAll({
           include: [
             {
@@ -238,30 +238,35 @@ const exportToPDF = async (req, res) => {
           ],
         });
 
+        // Mengolah data untuk format laporan produk
         const productSales = transactionDetails.reduce((acc, detail) => {
           if (!detail.product) return acc;
 
           const productId = detail.product.id;
           if (!acc[productId]) {
             acc[productId] = {
+              id: productId,
+              date: "-",
+              customer: "-",
+              salesperson: "-",
+              type: "PRODUCT",
               productName: detail.product.name,
               totalQuantity: 0,
               totalRevenue: 0,
+              total: 0,
             };
           }
           acc[productId].totalQuantity += detail.quantity || 0;
           acc[productId].totalRevenue += parseFloat(detail.totalPrice || 0);
+          acc[productId].total = acc[productId].totalRevenue;
           return acc;
         }, {});
 
-        data = Object.values(productSales);
-        formatRow = (row) =>
-          `Product: ${row.productName}\nQuantity Sold: ${
-            row.totalQuantity
-          }\nTotal Revenue: ${row.totalRevenue.toFixed(2)}`;
+        transactions = Object.values(productSales);
         break;
 
       case "customers":
+        // Mengambil data transaksi pelanggan
         const customerTransactions = await Transaction.findAll({
           where: {
             transactionDate: {
@@ -276,66 +281,48 @@ const exportToPDF = async (req, res) => {
           ],
         });
 
+        // Mengolah data untuk format laporan pelanggan
         const customerData = customerTransactions.reduce((acc, transaction) => {
           const customerId = transaction.customer?.id;
           if (!customerId) return acc;
 
           if (!acc[customerId]) {
             acc[customerId] = {
-              customerName: transaction.customer?.name || "Unknown Customer",
+              id: customerId,
+              date: "-",
+              customer: transaction.customer?.name || "Unknown Customer",
+              salesperson: "-",
+              type: "CUSTOMER",
               totalSpent: 0,
               transactionCount: 0,
+              total: 0,
             };
           }
           acc[customerId].totalSpent += parseFloat(
             transaction.totalAmount || 0
           );
           acc[customerId].transactionCount += 1;
+          acc[customerId].total = acc[customerId].totalSpent;
           return acc;
         }, {});
 
-        data = Object.values(customerData);
-        formatRow = (row) =>
-          `Customer: ${row.customerName}\nTotal Spent: ${row.totalSpent.toFixed(
-            2
-          )}\nTransaction Count: ${row.transactionCount}`;
+        transactions = Object.values(customerData);
         break;
 
       default:
         return res.status(400).json({ error: "Invalid report type" });
     }
 
-    // Generate PDF
-    const tempFilePath = options.fileName;
-    const doc = new PDFDocument();
-    const stream = fs.createWriteStream(tempFilePath);
+    // Menggunakan fungsi generatePDFReport yang sudah diperbaiki
+    const tempFilePath = await generatePDFReport(
+      transactions,
+      year,
+      month,
+      startDate,
+      endDate
+    );
 
-    doc.pipe(stream);
-
-    // Add title
-    doc.fontSize(16).text(options.title, {
-      align: "center",
-    });
-    doc.fontSize(12).text(`Period: ${startDate} to ${endDate}`, {
-      align: "center",
-    });
-    doc.moveDown();
-
-    // Add data
-    data.forEach((item) => {
-      doc.fontSize(10).text(formatRow(item));
-      doc.moveDown();
-    });
-
-    doc.end();
-
-    return new Promise((resolve, reject) => {
-      stream.on("finish", () => {
-        handleFileDownload(tempFilePath, res);
-        resolve();
-      });
-      stream.on("error", reject);
-    });
+    return await handleFileDownload(tempFilePath, res);
   } catch (error) {
     console.error("Export to PDF error:", error);
     return res.status(500).json({
