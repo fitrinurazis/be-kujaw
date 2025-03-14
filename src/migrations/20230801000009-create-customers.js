@@ -33,6 +33,10 @@ module.exports = {
       class_id: {
         type: Sequelize.INTEGER,
         allowNull: false,
+        references: {
+          model: "Classes",
+          key: "id",
+        },
       },
       progdi_id: {
         type: Sequelize.INTEGER,
